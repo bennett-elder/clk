@@ -148,6 +148,36 @@ class Clk:
     terse_entries = sorted(terse_entries, key=lambda x : x['start'])
     return terse_entries
 
+  def get_entries_in_datetime_range(self, start_date, end_date):
+    end_epoch = int(datetime.timestamp(end_date))
+    start_epoch = int(datetime.timestamp(start_date))
+    clickup_end = f'{end_epoch}000'
+    clickup_start = f'{start_epoch}000'
+    return self.get_entries_in_range(clickup_start, clickup_end)
+
+  def get_entries_in_range(self, start_epoch_with_milliseconds_as_string, end_epoch_with_milliseconds_as_string):
+    url = "https://api.clickup.com/api/v2/team/" + self.team_id + "/time_entries"
+    query = {
+       "start_date": start_epoch_with_milliseconds_as_string,
+       "end_date": end_epoch_with_milliseconds_as_string
+    }
+    headers = {
+      "Content-Type": "application/json",
+      "Authorization": self.pk
+    }
+    response = requests.get(url, headers=headers, params=query)
+    json = response.json()
+    entries = json["data"]
+    terse_entries = []
+    for e in entries:
+      entry = {}
+      entry["task"] = e["task"]
+      entry["start"] = e["start"]
+      entry["end"] = e["end"]
+      terse_entries.append(entry)
+    terse_entries = sorted(terse_entries, key=lambda x : x['start'])
+    return terse_entries
+
   def recent(self):
     start_date = datetime.today() - timedelta(30)
     start_as_epoch = int(datetime.timestamp(start_date))
@@ -166,6 +196,69 @@ class Clk:
       else:
         custom_id = ''
       print(f'{formatted_start} to {formatted_stop} {custom_id} {task["name"]}')
+  
+  def get_start_and_end_of_week(self, datetime_in_week):
+    day_of_week = datetime_in_week.weekday()
+    if (day_of_week == 6):
+      first_day_of_week = datetime_in_week.date()
+    else:
+      first_day_of_week = datetime_in_week.date() - timedelta(day_of_week + 1)
+    last_day_of_week = first_day_of_week + timedelta(6)
+    start_datetime = datetime(first_day_of_week.year, first_day_of_week.month, first_day_of_week.day)
+    end_datetime = datetime(last_day_of_week.year, last_day_of_week.month, last_day_of_week.day, 23, 59, 59)
+    result = {}
+    result["start"] = start_datetime
+    result["end"] = end_datetime
+    return result
+    #return start_datetime, end_datetime
+
+  def bins(self):
+    now = datetime.today()
+    this_week = self.get_start_and_end_of_week(now)
+    last_week = self.get_start_and_end_of_week(now - timedelta(7))
+    week_before = self.get_start_and_end_of_week(now - timedelta(14))
+    three_weeks_back = self.get_start_and_end_of_week(now - timedelta(21))
+    four_weeks_back = self.get_start_and_end_of_week(now - timedelta(28))
+    this_week["entries"] = self.get_entries_in_datetime_range(this_week["start"], this_week["end"])
+    last_week["entries"] = self.get_entries_in_datetime_range(last_week["start"], last_week["end"])
+    week_before["entries"] = self.get_entries_in_datetime_range(week_before["start"], week_before["end"])
+    three_weeks_back["entries"] = self.get_entries_in_datetime_range(three_weeks_back["start"], three_weeks_back["end"])
+    four_weeks_back["entries"] = self.get_entries_in_datetime_range(four_weeks_back["start"], four_weeks_back["end"])
+
+    self.print_week_summary(four_weeks_back)
+    self.print_week_summary(three_weeks_back)
+    self.print_week_summary(week_before)
+    self.print_week_summary(last_week)
+    self.print_week_summary(this_week)
+    
+  def print_week_summary(self, week):
+    buckets = {}
+    total = timedelta(0,0,0,0,0,0,0)
+    for doc in week["entries"]:
+      string_start = doc["start"][:-3]
+      string_stop = doc["end"][:-3]
+      start = datetime.fromtimestamp(int(string_start))
+      stop = datetime.fromtimestamp(int(string_stop))
+      task = doc["task"]
+      name = task["name"]
+      diff = stop - start
+      total += diff
+      if (name in buckets.keys()):
+        buckets[name]["total"] += diff
+      else:
+        buckets[name] = {
+          "total": diff
+        }
+      # print(name, start, stop, diff, buckets[name]["total"])
+    print(f'Week starting {datetime.date(week["start"])}')
+    entry_message = f'{len(week["entries"])} entries'
+    # print(total)
+    print(entry_message.ljust(25, ' '), format(total.total_seconds() / 3600, '.2f'), '\n')
+
+    for key in buckets:
+      print(key.ljust(25, ' '), format(buckets[key]["total"].total_seconds() / 3600, '.2f'))
+    
+    print('\n')
 
   def do_first_run(self):
     print('I see it is the first time running this.')
@@ -331,6 +424,7 @@ class Clk:
     group.add_argument("-recent", dest='recent', action='store_true', help="show entries from past 30 days")
     group.add_argument("-show-config", dest='config', action='store_true', help="show config file of customer shortnames")
     group.add_argument("-add", type=str, nargs=3, required=False, help="add new time entry")
+    group.add_argument("-bins", dest='bins', action='store_true', help="show summary breakdown")
 
 
     args = parser.parse_args()
@@ -345,6 +439,8 @@ class Clk:
       self.recent()
     elif (args.add):
         self.add()
+    elif (args.bins):
+        self.bins()
     else:
         parser.print_help()
 
