@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-arm:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyinstaller requests
+      - run: pyinstaller -F clk.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clk-arm64
+          path: dist/clk
+
+  build-x86:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyinstaller requests
+      - run: pyinstaller -F clk.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clk-x86_64
+          path: dist/clk
+
+  release:
+    needs: [build-arm, build-x86]
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: clk-arm64
+          path: arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: clk-x86_64
+          path: x86_64
+
+      - name: Create universal binary
+        run: |
+          lipo -create -output clk arm64/clk x86_64/clk
+          chmod +x clk
+
+      - name: Compute SHA256
+        id: sha
+        run: echo "sha256=$(shasum -a 256 clk | awk '{print $1}')" >> $GITHUB_OUTPUT
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          git tag $SHORT_SHA
+          git push origin $SHORT_SHA
+          gh release create $SHORT_SHA clk \
+            --title "$SHORT_SHA" \
+            --notes "Built from $GITHUB_SHA"
+
+      - name: Update homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          SHA256=${{ steps.sha.outputs.sha256 }}
+          git clone https://x-access-token:${TAP_TOKEN}@github.com/bennett-elder/homebrew-honk.git
+          cd homebrew-honk
+          cat > Formula/clk.rb << EOF
+          class Clk < Formula
+            desc "CLI tool for logging time to ClickUp"
+            homepage "https://github.com/bennett-elder/clk"
+            url "https://github.com/bennett-elder/clk/releases/download/${SHORT_SHA}/clk"
+            sha256 "${SHA256}"
+            version "${SHORT_SHA}"
+
+            def install
+              bin.install "clk"
+            end
+          end
+          EOF
+          git config user.email "github-actions@github.com"
+          git config user.name "github-actions"
+          git add Formula/clk.rb
+          git commit -m "Update clk to ${SHORT_SHA}"
+          git push
