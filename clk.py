@@ -6,6 +6,7 @@ import configparser
 from datetime import datetime, timedelta
 import requests
 import ast
+from sys import exit
 
 class Clk:
   def __init__(self):
@@ -103,6 +104,7 @@ class Clk:
 
     if response.status_code != 200:
       print(f'Error: {response.status_code}')
+      print(response)
       return False
     return True
     
@@ -313,6 +315,22 @@ class Clk:
     # clk.py -add 10 min cust-2977
       # true false false
 
+    if len(args) == 2:
+      combined = args[0]
+      if len(combined) > 1 and combined[-1] in ['m', 'h'] and self.is_integer(combined[:-1]):
+        args = [combined[:-1], combined[-1], args[1]]
+      else:
+        print('Invalid syntax')
+        print('Please use')
+        print('clk add since last SHORTNAME')
+        print('clk add 1300 1330 SHORTNAME')
+        print('clk add 10 min SHORTNAME')
+        print('clk add 10m SHORTNAME')
+        exit()
+    elif len(args) != 3:
+      print('Invalid syntax')
+      exit()
+
     syntax_seen = 'invalid'
 
     if (self.is_integer(args[2])):
@@ -335,9 +353,10 @@ class Clk:
     else:
       print('Invalid syntax')
       print('Please use')
-      print('-add since last SHORTNAME')
-      print('-add 1300 1330 SHORTNAME')
-      print('-add 10 min SHORTNAME')
+      print('clk add since last SHORTNAME')
+      print('clk add 1300 1330 SHORTNAME')
+      print('clk add 10 min SHORTNAME')
+      print('clk add 10m SHORTNAME')
       exit()
 
     passed_id = args[2]
@@ -420,29 +439,27 @@ class Clk:
 
   def parse_args_branch_execution(self):
     parser = argparse.ArgumentParser("./clk.py")
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("-recent", dest='recent', action='store_true', help="show entries from past 30 days")
-    group.add_argument("-show-config", dest='config', action='store_true', help="show config file of customer shortnames")
-    group.add_argument("-add", type=str, nargs=3, required=False, help="add new time entry")
-    group.add_argument("-bins", dest='bins', action='store_true', help="show summary breakdown")
+    subparsers = parser.add_subparsers(dest='command')
 
+    add_parser = subparsers.add_parser('add', help="add new time entry")
+    add_parser.add_argument('args', nargs='+', metavar='ARG')
+
+    subparsers.add_parser('recent', help="show entries from past 30 days")
+    subparsers.add_parser('show-config', help="show config file of customer shortnames")
+    subparsers.add_parser('bins', help="show summary breakdown")
 
     args = parser.parse_args()
 
-    if (1<0):
-        pass
-    elif (args.add is not None and len(args.add) > 0):
-        self.add(args.add)
-    elif (args.config):
+    if args.command == 'add':
+      self.add(args.args)
+    elif args.command == 'show-config':
       self.open_config()
-    elif (args.recent):
+    elif args.command == 'recent':
       self.recent()
-    elif (args.add):
-        self.add()
-    elif (args.bins):
-        self.bins()
+    elif args.command == 'bins':
+      self.bins()
     else:
-        parser.print_help()
+      parser.print_help()
 
 clk = Clk()
 if (clk.first_run):
