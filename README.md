@@ -9,11 +9,13 @@ Whichever way, type it fast.
 # Usage
 
 ```
-./clk.py -add since last acme
-./clk.py -add 1400 1530 dunder
-./clk.py -add 10 min cust-2977
-./clk.py -recent
-./clk.py -show-config
+clk add since last acme
+clk add 1400 1530 dunder
+clk add 10 min cust-2977
+clk add 10m cust-2977
+clk recent
+clk bins
+clk show-config
 ```
 
 # Installation
@@ -34,18 +36,9 @@ https://app.clickup.com/YOUR_ID_HERE
 
 Please set environment variable `CLICKUP_TEAM_ID` to that number.
 
-## Bundle
-
-Bundle it into a single executable file with pyinstaller
+## Homebrew
 
 ```
-pyinstaller clk.py -F
-```
-
-## Alias
-
-Add an alias for it to your .zshrc file
-
-```
-alias clk=~/clk/dist/clk
+brew tap bennett-elder/honk
+brew install clk
 ```
