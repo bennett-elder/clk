@@ -69,17 +69,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
-          git tag $SHORT_SHA
-          git push origin $SHORT_SHA
-          gh release create $SHORT_SHA clk \
-            --title "$SHORT_SHA" \
+          MONTHS=$(( ($(date -u +%Y) - 2025) * 12 + ($(date -u +%-m) - 12) ))
+          VERSION="0.${MONTHS}.$(date -u +%d.%H%M%S)"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          git tag $VERSION
+          git push origin $VERSION
+          gh release create $VERSION clk \
+            --title "$VERSION ($SHORT_SHA)" \
             --notes "Built from $GITHUB_SHA"
 
       - name: Update homebrew tap
         env:
           TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
         run: |
-          SHORT_SHA=${GITHUB_SHA::7}
           SHA256=${{ steps.sha.outputs.sha256 }}
           git clone https://x-access-token:${TAP_TOKEN}@github.com/bennett-elder/homebrew-honk.git
           cd homebrew-honk
@@ -87,9 +89,9 @@ jobs:
           class Clk < Formula
             desc "CLI tool for logging time to ClickUp"
             homepage "https://github.com/bennett-elder/clk"
-            url "https://github.com/bennett-elder/clk/releases/download/${SHORT_SHA}/clk"
+            url "https://github.com/bennett-elder/clk/releases/download/${VERSION}/clk"
             sha256 "${SHA256}"
-            version "${SHORT_SHA}"
+            version "${VERSION}"
 
             def install
               bin.install "clk"
