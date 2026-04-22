@@ -214,28 +214,26 @@ class Clk:
     return result
     #return start_datetime, end_datetime
 
-  def bins(self):
+  def bins(self, num_weeks=1):
     now = datetime.today()
-    this_week = self.get_start_and_end_of_week(now)
-    last_week = self.get_start_and_end_of_week(now - timedelta(7))
-    week_before = self.get_start_and_end_of_week(now - timedelta(14))
-    three_weeks_back = self.get_start_and_end_of_week(now - timedelta(21))
-    four_weeks_back = self.get_start_and_end_of_week(now - timedelta(28))
-    this_week["entries"] = self.get_entries_in_datetime_range(this_week["start"], this_week["end"])
-    last_week["entries"] = self.get_entries_in_datetime_range(last_week["start"], last_week["end"])
-    week_before["entries"] = self.get_entries_in_datetime_range(week_before["start"], week_before["end"])
-    three_weeks_back["entries"] = self.get_entries_in_datetime_range(three_weeks_back["start"], three_weeks_back["end"])
-    four_weeks_back["entries"] = self.get_entries_in_datetime_range(four_weeks_back["start"], four_weeks_back["end"])
-
-    self.print_week_summary(four_weeks_back)
-    self.print_week_summary(three_weeks_back)
-    self.print_week_summary(week_before)
-    self.print_week_summary(last_week)
-    self.print_week_summary(this_week)
+    weeks = []
+    for i in range(num_weeks - 1, -1, -1):
+      week = self.get_start_and_end_of_week(now - timedelta(7 * i))
+      week["entries"] = self.get_entries_in_datetime_range(week["start"], week["end"])
+      weeks.append(week)
+    for week in weeks:
+      self.print_week_summary(week)
     
   def print_week_summary(self, week):
-    buckets = {}
-    total = timedelta(0,0,0,0,0,0,0)
+    # day index: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+    DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    ZERO = timedelta(0)
+
+    buckets = {}   # name -> {day_index: timedelta, ...}
+    grand_total = ZERO
+    has_sunday = False
+    has_saturday = False
+
     for doc in week["entries"]:
       string_start = doc["start"][:-3]
       string_stop = doc["end"][:-3]
@@ -244,23 +242,61 @@ class Clk:
       task = doc["task"]
       name = task["name"]
       diff = stop - start
-      total += diff
-      if (name in buckets.keys()):
-        buckets[name]["total"] += diff
-      else:
-        buckets[name] = {
-          "total": diff
-        }
-      # print(name, start, stop, diff, buckets[name]["total"])
-    print(f'Week starting {datetime.date(week["start"])}')
-    entry_message = f'{len(week["entries"])} entries'
-    # print(total)
-    print(entry_message.ljust(25, ' '), format(total.total_seconds() / 3600, '.2f'), '\n')
+      grand_total += diff
+      # weekday(): Mon=0..Sun=6 → remap to Sun=0..Sat=6
+      py_dow = start.weekday()
+      day_idx = (py_dow + 1) % 7
+      if day_idx == 0:
+        has_sunday = True
+      if day_idx == 6:
+        has_saturday = True
+      if name not in buckets:
+        buckets[name] = {}
+      buckets[name][day_idx] = buckets[name].get(day_idx, ZERO) + diff
 
-    for key in buckets:
-      print(key.ljust(25, ' '), format(buckets[key]["total"].total_seconds() / 3600, '.2f'))
-    
-    print('\n')
+    # build ordered list of day columns to show
+    core_days = [1, 2, 3, 4, 5]  # Mon–Fri always shown
+    col_days = ([0] if has_sunday else []) + core_days + ([6] if has_saturday else [])
+
+    NAME_W = 26
+    COL_W = 6   # e.g. " 3.25"
+
+    def fmt_h(td):
+      h = td.total_seconds() / 3600
+      return f'{h:.2f}'.rjust(COL_W)
+
+    def blank_col():
+      return ' ' * COL_W
+
+    # header
+    week_label = f'Week of {datetime.date(week["start"])}'
+    header_days = ''.join(DAY_NAMES[d].rjust(COL_W) for d in col_days) + ' Total'.rjust(COL_W + 2)
+    border_w = NAME_W + len(header_days)
+    border = '─' * border_w
+
+    print()
+    print('  ' + week_label.ljust(NAME_W) + header_days)
+    print('  ' + border)
+
+    for name in sorted(buckets):
+      row = name[:NAME_W - 1].ljust(NAME_W)
+      name_total = ZERO
+      for d in col_days:
+        td = buckets[name].get(d, ZERO)
+        name_total += td
+        row += fmt_h(td) if td else blank_col()
+      row += fmt_h(name_total).rjust(COL_W + 2)
+      print('  ' + row)
+
+    print('  ' + border)
+    # totals row
+    total_row = 'TOTAL'.ljust(NAME_W)
+    for d in col_days:
+      day_total = sum((buckets[n].get(d, ZERO) for n in buckets), ZERO)
+      total_row += fmt_h(day_total) if day_total else blank_col()
+    total_row += fmt_h(grand_total).rjust(COL_W + 2)
+    print('  ' + total_row)
+    print()
 
   def do_first_run(self):
     print('I see it is the first time running this.')
@@ -446,7 +482,8 @@ class Clk:
 
     subparsers.add_parser('recent', help="show entries from past 30 days")
     subparsers.add_parser('show-config', help="show config file of customer shortnames")
-    subparsers.add_parser('bins', help="show summary breakdown")
+    bins_parser = subparsers.add_parser('bins', help="show summary breakdown")
+    bins_parser.add_argument('weeks', nargs='?', type=int, default=1, metavar='WEEKS', help="number of weeks to show (default: 1)")
 
     args = parser.parse_args()
 
@@ -457,7 +494,7 @@ class Clk:
     elif args.command == 'recent':
       self.recent()
     elif args.command == 'bins':
-      self.bins()
+      self.bins(args.weeks)
     else:
       parser.print_help()
 
