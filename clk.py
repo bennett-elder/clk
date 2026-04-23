@@ -241,18 +241,19 @@ class Clk:
       stop = datetime.fromtimestamp(int(string_stop))
       task = doc["task"]
       name = task["name"]
-      diff = stop - start
-      grand_total += diff
-      # weekday(): Mon=0..Sun=6 → remap to Sun=0..Sat=6
-      py_dow = start.weekday()
-      day_idx = (py_dow + 1) % 7
-      if day_idx == 0:
-        has_sunday = True
-      if day_idx == 6:
-        has_saturday = True
+      grand_total += stop - start
       if name not in buckets:
         buckets[name] = {}
-      buckets[name][day_idx] = buckets[name].get(day_idx, ZERO) + diff
+      midnight = datetime(start.year, start.month, start.day) + timedelta(days=1)
+      slices = [(start, min(stop, midnight)), (midnight, stop)] if stop > midnight else [(start, stop)]
+      for slice_start, slice_end in slices:
+        py_dow = slice_start.weekday()
+        day_idx = (py_dow + 1) % 7
+        if day_idx == 0:
+          has_sunday = True
+        if day_idx == 6:
+          has_saturday = True
+        buckets[name][day_idx] = buckets[name].get(day_idx, ZERO) + (slice_end - slice_start)
 
     # build ordered list of day columns to show
     core_days = [1, 2, 3, 4, 5]  # Mon–Fri always shown
