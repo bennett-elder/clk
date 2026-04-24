@@ -339,7 +339,7 @@ class Clk:
     self.write_config()
     print('use -show-config option to see shortnames available to -add command')
 
-  def add(self, args):
+  def add(self, args, date_str=None):
     # Syntax 1
     # clk.py -add since last shortname
       # false false false
@@ -429,12 +429,25 @@ class Clk:
 
     now = datetime.now()
 
+    if date_str is not None:
+      if len(date_str) != 4 or not date_str.isdigit():
+        print('--date must be in MMDD format, e.g. 0423')
+        exit()
+      try:
+        entry_date = datetime(now.year, int(date_str[:2]), int(date_str[2:]))
+      except ValueError:
+        print(f'--date {date_str} is not a valid date; use MMDD format, e.g. 1105 for November 5')
+        exit()
+    else:
+      entry_date = now
+
     if (syntax_seen == '1'):
-      # find most recent entry and create an entry that starts when that one stops and goes until {now}
+      if date_str is not None:
+        print('--date cannot be used with "since last" syntax')
+        exit()
       latest = self.get_latest_entry()
-      stop_format = '%m-%d %H:%M'
       stop = latest["end"][:-3]
-      entry_start = datetime.fromtimestamp(int(stop)) #.strftime(stop_format)
+      entry_start = datetime.fromtimestamp(int(stop))
       entry_finish = datetime(now.year, now.month, now.day, now.hour, now.minute, now.second)
 
     elif (syntax_seen == '2'):
@@ -448,13 +461,13 @@ class Clk:
       finish_minute = finish - finish_hour
       finish_hour /= 100
       finish_hour = int(finish_hour)
-      year = now.year
-      month = now.month
-      day = now.day
-      entry_start = datetime(year, month, day, start_hour, start_minute)
-      entry_finish = datetime(year, month, day, finish_hour, finish_minute)
+      entry_start = datetime(entry_date.year, entry_date.month, entry_date.day, start_hour, start_minute)
+      entry_finish = datetime(entry_date.year, entry_date.month, entry_date.day, finish_hour, finish_minute)
 
     elif (syntax_seen == '3'):
+      if date_str is not None:
+        print('--date cannot be used with duration syntax; use "clk add HHMM HHMM SHORTNAME --date MMDD" instead')
+        exit()
       quantity = int(args[0])
       unit = args[1]
       if (unit in ['min','m']):
@@ -480,6 +493,7 @@ class Clk:
 
     add_parser = subparsers.add_parser('add', help="add new time entry")
     add_parser.add_argument('args', nargs='+', metavar='ARG')
+    add_parser.add_argument('-d', '--date', metavar='MMDD', help="date for entry (default: today)")
 
     subparsers.add_parser('recent', help="show entries from past 30 days")
     subparsers.add_parser('show-config', help="show config file of customer shortnames")
@@ -489,7 +503,7 @@ class Clk:
     args = parser.parse_args()
 
     if args.command == 'add':
-      self.add(args.args)
+      self.add(args.args, args.date)
     elif args.command == 'show-config':
       self.open_config()
     elif args.command == 'recent':
